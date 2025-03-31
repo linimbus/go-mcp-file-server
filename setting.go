@@ -262,6 +262,12 @@ func SearchSettingDialog(from walk.Form) {
 						AssignTo: &acceptPB,
 						Text:     "Accept",
 						OnClicked: func() {
+							config.DriveName = driveTable.ItemsChecked()
+							if len(config.DriveName) == 0 {
+								ErrorBoxAction(dlg, "Drive list is empty")
+								return
+							}
+							config.FilterName = filterListTable.ItemsAll()
 
 							if err := ConfigSet(config); err != nil {
 								ErrorBoxAction(dlg, "Save config failed, "+err.Error())
