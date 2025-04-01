@@ -82,15 +82,13 @@ func (n *DriveTable) ItemsAdd(path string) {
 	n.Sort(n.sortColumn, n.sortOrder)
 }
 
-func (m *DriveTable) ItemsChecked() []string {
+func (m *DriveTable) ItemsChecked() []DriveConfig {
 	m.Lock()
 	defer m.Unlock()
 
-	items := make([]string, 0)
+	items := make([]DriveConfig, 0)
 	for _, v := range m.items {
-		if v.checked {
-			items = append(items, v.Name)
-		}
+		items = append(items, DriveConfig{Name: v.Name, Enable: v.checked})
 	}
 	return items
 }
@@ -129,7 +127,7 @@ func SearchSettingDialog(from walk.Form) {
 	var dlg *walk.Dialog
 	var acceptPB, cancelPB *walk.PushButton
 
-	var hideFolderCB, monitorCB *walk.CheckBox
+	var ignoreFolderCB, ignoreSystem, monitorCB *walk.CheckBox
 	var driveTableView, filterListView *walk.TableView
 
 	driveTable := &DriveTable{
@@ -150,7 +148,7 @@ func SearchSettingDialog(from walk.Form) {
 		})
 	}
 
-	for _, v := range config.FilterName {
+	for _, v := range config.FilterFolder {
 		filterListTable.items = append(filterListTable.items, &DriveItem{
 			Name:    v,
 			checked: false,
@@ -160,8 +158,7 @@ func SearchSettingDialog(from walk.Form) {
 	_, err := Dialog{
 		AssignTo:      &dlg,
 		Title:         "Search Setting",
-		MinSize:       Size{Width: 400, Height: 300},
-		Size:          Size{Width: 600, Height: 800},
+		MinSize:       Size{Width: 350, Height: 400},
 		Icon:          ICON_Setting,
 		Font:          DefaultFont(),
 		DefaultButton: &acceptPB,
@@ -188,18 +185,31 @@ func SearchSettingDialog(from walk.Form) {
 						Model: driveTable,
 					},
 					Composite{
-						Layout: VBox{MarginsZero: true},
+						Alignment: AlignHNearVCenter,
+						Layout:    VBox{MarginsZero: true},
 						Children: []Widget{
 							CheckBox{
-								AssignTo:           &hideFolderCB,
-								Text:               "Filter Hide Folder",
+								Alignment:          AlignHNearVCenter,
+								AssignTo:           &ignoreFolderCB,
+								Text:               "Ignore Hide Folder",
 								Checked:            config.FilterHide,
 								RightToLeftReading: true,
 								OnCheckedChanged: func() {
-									config.FilterHide = hideFolderCB.Checked()
+									config.FilterHide = ignoreFolderCB.Checked()
 								},
 							},
 							CheckBox{
+								Alignment:          AlignHNearVCenter,
+								AssignTo:           &ignoreSystem,
+								Text:               "Ignore System Folder",
+								Checked:            config.FilterHide,
+								RightToLeftReading: true,
+								OnCheckedChanged: func() {
+									config.FilterSystem = ignoreSystem.Checked()
+								},
+							},
+							CheckBox{
+								Alignment:          AlignHNearVCenter,
 								AssignTo:           &monitorCB,
 								Text:               "Monitor File Change",
 								Checked:            config.FileNotify,
@@ -212,7 +222,7 @@ func SearchSettingDialog(from walk.Form) {
 					},
 
 					Label{
-						Text: "Filter Name List",
+						Text: "Filter Folder List",
 					},
 					HSpacer{},
 
@@ -227,7 +237,8 @@ func SearchSettingDialog(from walk.Form) {
 						Model: filterListTable,
 					},
 					Composite{
-						Layout: VBox{MarginsZero: true},
+						Alignment: AlignHNearVCenter,
+						Layout:    VBox{MarginsZero: true},
 						Children: []Widget{
 							PushButton{
 								Text: "Add",
@@ -262,12 +273,12 @@ func SearchSettingDialog(from walk.Form) {
 						AssignTo: &acceptPB,
 						Text:     "Accept",
 						OnClicked: func() {
-							config.DriveName = driveTable.ItemsChecked()
-							if len(config.DriveName) == 0 {
+							config.SearchDrives = driveTable.ItemsChecked()
+							if len(config.SearchDrives) == 0 {
 								ErrorBoxAction(dlg, "Drive list is empty")
 								return
 							}
-							config.FilterName = filterListTable.ItemsAll()
+							config.FilterFolder = filterListTable.ItemsAll()
 
 							if err := ConfigSet(config); err != nil {
 								ErrorBoxAction(dlg, "Save config failed, "+err.Error())

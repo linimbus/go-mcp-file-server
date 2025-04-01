@@ -39,6 +39,20 @@ func TimeStampGet(tm time.Time) string {
 	return tm.Format("2006-01-02 15:04:05")
 }
 
+func ByteView(size int64) string {
+	if size < 1024 {
+		return fmt.Sprintf("%dB", size)
+	} else if size < (1024 * 1024) {
+		return fmt.Sprintf("%.1fKB", float64(size)/float64(1024))
+	} else if size < (1024 * 1024 * 1024) {
+		return fmt.Sprintf("%.1fMB", float64(size)/float64(1024*1024))
+	} else if size < (1024 * 1024 * 1024 * 1024) {
+		return fmt.Sprintf("%.1fGB", float64(size)/float64(1024*1024*1024))
+	} else {
+		return fmt.Sprintf("%.1fTB", float64(size)/float64(1024*1024*1024*1024))
+	}
+}
+
 func DefaultFont() Font {
 	return Font{Family: "Segoe UI", PointSize: 9, Bold: false}
 }
@@ -132,16 +146,16 @@ func RegistryStartupDel(appName string) error {
 	return nil
 }
 
-func IsFileHidden(filePath string) (bool, error) {
+func GetPathAttributes(filePath string) (uint32, error) {
 	path, err := windows.UTF16PtrFromString(filePath)
 	if err != nil {
-		return false, fmt.Errorf("failed to convert file path to UTF-16: %v", err)
+		return 0, fmt.Errorf("failed to convert file path to UTF-16: %v", err)
 	}
 	attrs, err := windows.GetFileAttributes(path)
 	if err != nil {
-		return false, fmt.Errorf("failed to get file attributes: %v", err)
+		return 0, fmt.Errorf("failed to get file attributes: %v", err)
 	}
-	return attrs&windows.FILE_ATTRIBUTE_HIDDEN != 0, nil
+	return attrs, nil
 }
 
 func GetDriveNames() []string {

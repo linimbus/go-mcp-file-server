@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"sort"
 	"sync"
 	"time"
@@ -11,6 +12,7 @@ import (
 )
 
 var mainWindow *walk.MainWindow
+var srv *Server
 
 func init() {
 	go func() {
@@ -24,7 +26,7 @@ func init() {
 	}()
 }
 
-var autoStartupCheck, autoHideWindows *walk.Action
+var autoStartupCheck, autoHideWindows, forceScan *walk.Action
 
 func MenuBarInit() []MenuItem {
 	return []MenuItem{
@@ -43,6 +45,16 @@ func MenuBarInit() []MenuItem {
 						McpServerConfigDialog(mainWindow)
 					},
 				},
+				Action{
+					AssignTo: &forceScan,
+					Text:     "Rebuild Index",
+					Enabled:  true,
+					OnTriggered: func() {
+						ForceScanSet(true)
+						forceScan.SetEnabled(false)
+					},
+				},
+
 				Action{
 					Text:     "Auto Startup",
 					AssignTo: &autoStartupCheck,
@@ -115,7 +127,7 @@ func MenuBarInit() []MenuItem {
 type ViewItem struct {
 	Name    string
 	Path    string
-	Size    int64
+	Size    string
 	ModTime string
 
 	checked bool
@@ -185,6 +197,35 @@ func (m *QueryTable) Sort(col int, order walk.SortOrder) error {
 	return m.SorterBase.Sort(col, order)
 }
 
+func (m *QueryTable) QuerySearch(keyword string) error {
+	m.Lock()
+	defer m.Unlock()
+
+	if srv == nil {
+		return fmt.Errorf("sqlite db init failed")
+	}
+
+	fileInfos, err := srv.sql.Query(keyword, 1024)
+	if err != nil {
+		return err
+	}
+
+	m.items = make([]*ViewItem, 0)
+	for _, file := range fileInfos {
+		m.items = append(m.items, &ViewItem{
+			Name:    file.Name,
+			Path:    file.Path,
+			Size:    ByteView(file.Size),
+			ModTime: file.ModTime.Format(time.DateTime),
+		})
+	}
+
+	m.PublishRowsReset()
+	m.Sort(m.sortColumn, m.sortOrder)
+
+	return nil
+}
+
 var queryTableView *walk.TableView
 var queryTableData *QueryTable
 var searchText *walk.LineEdit
@@ -197,10 +238,20 @@ func init() {
 
 func MainWindows() {
 	defer func() {
+		if srv != nil {
+			srv.Shutdown()
+		}
 		if err := recover(); err != nil {
 			logs.Error("recover error %v", err)
 		}
 	}()
+
+	var err error
+
+	srv, err = NewServer(ConfigGet())
+	if err != nil {
+		StatusUpdate(err.Error())
+	}
 
 	CapSignal(CloseWindows)
 
@@ -215,13 +266,28 @@ func MainWindows() {
 		MenuItems:      MenuBarInit(),
 		StatusBarItems: StatusBarInit(),
 		Children: []Widget{
-			LineEdit{
-				AssignTo: &searchText,
-				OnEditingFinished: func() {
+			Composite{
+				Layout: HBox{MarginsZero: true},
+				Children: []Widget{
+					LineEdit{
+						AssignTo: &searchText,
+						OnEditingFinished: func() {
+							queryTableData.QuerySearch(searchText.Text())
+						},
+						OnTextChanged: func() {
 
-				},
-				OnTextChanged: func() {
-
+						},
+					},
+					PushButton{
+						Text:    "Search",
+						MinSize: Size{Width: 80, Height: 30},
+						OnClicked: func() {
+							err := queryTableData.QuerySearch(searchText.Text())
+							if err != nil {
+								ErrorBoxAction(mainWindow, err.Error())
+							}
+						},
+					},
 				},
 			},
 			TableView{

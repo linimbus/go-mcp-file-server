@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sync"
 	"time"
@@ -25,6 +26,43 @@ type FileInfo struct {
 	Size    int64     // 文件大小
 }
 
+func (f *FileInfo) ToHeader() []string {
+	return []string{
+		"filename", "is directory", "filepath", "file extension name", "drive name", "file modification time", "file size",
+	}
+}
+
+func (f *FileInfo) ToList() []string {
+	isDir := "false"
+	if f.IsDir > 0 {
+		isDir = "true"
+	}
+	return []string{
+		f.Name, isDir, f.Path, f.Ext, f.Drive,
+		TimeStampGet(f.ModTime), ByteView(f.Size),
+	}
+}
+
+func NewFileInfo(filePath string) (*FileInfo, error) {
+	fileInfo, err := os.Stat(filePath)
+	if err != nil {
+		return nil, err
+	}
+	isDir := 0
+	if fileInfo.IsDir() {
+		isDir = 1
+	}
+	return &FileInfo{
+		Name:    filepath.Base(filePath),
+		IsDir:   isDir,
+		Path:    filePath,
+		Ext:     filepath.Ext(filePath),
+		Drive:   filePath[:3],
+		ModTime: fileInfo.ModTime(),
+		Size:    fileInfo.Size(),
+	}, nil
+}
+
 type FileNotify struct {
 	Event uint32
 	File  FileInfo
@@ -41,6 +79,10 @@ CREATE TABLE IF NOT EXISTS file_info (
 	mod_time TEXT NOT NULL,
 	size INTEGER NOT NULL
 );`
+
+var TABLE_INDEX_SQL = `
+CREATE INDEX idx_file_info_name ON file_info (name, ext);
+`
 
 var TABLE_INSERT_SQL = `
 INSERT INTO file_info (name, is_dir, path, ext, drive, mod_time, size)
@@ -76,6 +118,10 @@ func NewSQLiteDB() (*SQLiteDB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create table failed, %s", err.Error())
 	}
+	_, err = db.Exec(TABLE_INDEX_SQL)
+	if err != nil {
+		return nil, fmt.Errorf("create index failed, %s", err.Error())
+	}
 	s := &SQLiteDB{db: db, notify: make(chan interface{}, NOTIFY_CACHE_LENGTH)}
 	s.Add(1)
 	go recvNotifyTask(s)
@@ -94,6 +140,9 @@ func (s *SQLiteDB) Reset() error {
 	if err != nil {
 		return fmt.Errorf("create table failed, %s", err.Error())
 	}
+
+	logs.Info("sql reset database success")
+
 	return nil
 }
 
@@ -192,42 +241,56 @@ func (s *SQLiteDB) Close() {
 	logs.Info("sql closed")
 }
 
-func (s *SQLiteDB) Write() chan interface{} {
+func (s *SQLiteDB) Notify() chan interface{} {
 	return s.notify
 }
 
-func (s *SQLiteDB) Query(keywords []string, limit int) ([]FileInfo, error) {
+func (s *SQLiteDB) Write(file FileInfo) {
+	s.Lock()
+	defer s.Unlock()
+
+	_, err := s.db.Exec(TABLE_INSERT_SQL,
+		file.Name, file.IsDir,
+		file.Path, file.Ext,
+		file.Drive,
+		file.ModTime.Format(time.RFC3339),
+		file.Size)
+	if err != nil {
+		logs.Warning("insert sql %v failed, %s", file, err.Error())
+	}
+}
+
+func (s *SQLiteDB) Query(keyword string, limit int) ([]FileInfo, error) {
 	s.RLock()
 	defer s.RUnlock()
 
-	output := make([]FileInfo, 1024)
-	for _, searchKeyword := range keywords {
-		rows, err := s.db.Query(TABLE_QUERY_SQL, "%"+searchKeyword+"%", limit)
+	output := make([]FileInfo, 0)
+	rows, err := s.db.Query(TABLE_QUERY_SQL, "%"+keyword+"%", limit)
+	if err != nil {
+		logs.Warning("query sql failed, %s", err.Error())
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var name, path, ext, drive, modTimeStr string
+		var isDir int
+		var size int64
+
+		err := rows.Scan(&name, &isDir, &path, &ext, &drive, &modTimeStr, &size)
 		if err != nil {
-			logs.Warning("query sql failed, %s", err.Error())
-			continue
-		}
-		defer rows.Close()
-
-		for rows.Next() {
-			var name, path, ext, drive, modTimeStr string
-			var isDir int
-			var size int64
-
-			err := rows.Scan(&name, &isDir, &path, &ext, &drive, &modTimeStr, &size)
+			logs.Warning("find error during scan row: %v", err)
+		} else {
+			modTime, err := time.Parse(time.RFC3339, modTimeStr)
 			if err != nil {
-				logs.Warning("find error during scan row: %v", err)
-			} else {
-				modTime, err := time.Parse(time.RFC3339, modTimeStr)
-				if err != nil {
-					logs.Warning("parse mod time %s failed, %s", modTimeStr, err.Error())
-				}
-				output = append(output, FileInfo{Name: name, IsDir: isDir, Path: path, Ext: ext, Drive: drive, ModTime: modTime, Size: size})
+				logs.Warning("parse mod time %s failed, %s", modTimeStr, err.Error())
 			}
-		}
-		if err := rows.Err(); err != nil {
-			logs.Warning("find error during iteration: %v", err)
+			output = append(output, FileInfo{Name: name, IsDir: isDir, Path: path, Ext: ext, Drive: drive, ModTime: modTime, Size: size})
 		}
 	}
+	if err := rows.Err(); err != nil {
+		logs.Warning("find error during iteration: %v", err)
+	}
+
 	return output, nil
 }

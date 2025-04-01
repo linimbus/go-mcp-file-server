@@ -5,35 +5,96 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/astaxie/beego/logs"
+	"golang.org/x/sys/windows"
 )
 
+type DriveConfig struct {
+	Name   string `json:"name"`   // drive name
+	Enable bool   `json:"enable"` // drive enable
+}
+
 type Config struct {
-	McpListen string // mcp server listen address
-	McpPort   int    // mcp server listen port
-	McpEnable bool   // mcp server enable
+	McpListen string `json:"mcp_listen"` // mcp server listen address
+	McpPort   int    `json:"mcp_port"`   // mcp server listen port
+	McpEnable bool   `json:"map_enable"` // mcp server enable
 
-	DriveName  []string // drive name list
-	FilterName []string // filter name list
-	FilterHide bool     // filter hide
-	FileNotify bool     // sub filesystem notify
+	SearchDrives []DriveConfig `json:"search_drives"`        // drive name list
+	FilterRegx   []string      `json:"filter_regx"`          // filter regx list
+	FilterFolder []string      `json:"filter_folder"`        // filter folder list
+	FilterHide   bool          `json:"filter_hide_folder"`   // filter hide
+	FilterSystem bool          `json:"filter_system_folder"` // filter system folder
+	FileNotify   bool          `json:"file_notify_enable"`   // filesystem change event notify
 
-	AutoHide    bool // auto hide
-	AutoStartup bool // auto startup
+	AutoHide    bool `json:"auto_hide_windows"`   // auto hide
+	AutoStartup bool `json:"auto_startup_system"` // auto startup
+
+	CacheLength uint32 `json:"cache_length"`
+}
+
+func (c *Config) CheckFolder(path string) bool {
+	if len(path) < 4 { // ignore path like "C:\"
+		return false
+	}
+
+	if strings.Contains(path, "$Recycle.Bin") {
+		return true
+	}
+
+	for _, v := range c.FilterFolder {
+		if strings.Contains(path, v) {
+			return true
+		}
+	}
+
+	if c.FilterHide || c.FilterSystem {
+		attr, err := GetPathAttributes(path)
+		if err != nil {
+			logs.Warning("get path attributes failed, %s", err.Error())
+			return false
+		}
+
+		if c.FilterHide && attr&windows.FILE_ATTRIBUTE_HIDDEN != 0 {
+			return true
+		}
+
+		if c.FilterSystem && attr&windows.FILE_ATTRIBUTE_SYSTEM != 0 {
+			return true
+		}
+	}
+
+	if c.FilterHide && filepath.Base(path)[0] == '.' {
+		logs.Info("skip hidden folder %s", path)
+		return true
+	}
+
+	return false
 }
 
 var configCache = Config{
-	McpListen: "0.0.0.0",
-	McpPort:   8888,
-	McpEnable: true,
+	McpListen:    "0.0.0.0",
+	McpPort:      8888,
+	McpEnable:    true,
+	SearchDrives: []DriveConfig{},
+	FilterFolder: []string{"C:\\Windows", "C:\\Program Files", "C:\\Program Files (x86)", "C:\\ProgramData"},
+	FilterRegx:   []string{},
+	FilterHide:   true,
+	FilterSystem: true,
+	AutoHide:     false,
+	AutoStartup:  false,
+	CacheLength:  1024 * 1024,
+}
 
-	DriveName:  []string{"C:\\", "D:\\", "E:\\"},
-	FilterName: []string{"C:\\Windows", "C:\\Program Files", "C:\\Program Files (x86)", "C:\\ProgramData"},
-	FilterHide: true,
-
-	AutoHide:    false,
-	AutoStartup: false,
+func init() {
+	drives := GetDriveNames()
+	for _, drive := range drives {
+		configCache.SearchDrives = append(configCache.SearchDrives, DriveConfig{
+			Name:   drive,
+			Enable: true,
+		})
+	}
 }
 
 var configFilePath string
@@ -48,8 +109,8 @@ func configSyncToFile() error {
 }
 
 func ConfigDriveExist(name string) bool {
-	for _, v := range configCache.DriveName {
-		if v == name {
+	for _, v := range configCache.SearchDrives {
+		if v.Name == name && v.Enable {
 			return true
 		}
 	}

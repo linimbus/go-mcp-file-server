@@ -2,14 +2,14 @@ package main
 
 import (
 	"fmt"
-	"log"
+	"sync"
 	"syscall"
 	"unsafe"
 
+	"github.com/astaxie/beego/logs"
 	"golang.org/x/sys/windows"
 )
 
-// 定义常量和结构体
 const (
 	FILE_LIST_DIRECTORY        = 0x0001
 	FILE_SHARE_READ            = 0x00000001
@@ -23,7 +23,7 @@ type FILE_NOTIFY_INFORMATION struct {
 	NextEntryOffset uint32
 	Action          uint32
 	FileNameLength  uint32
-	FileName        [1]uint16 // 动态数组，实际长度由 FileNameLength 决定
+	FileName        [1]uint16 // Dynamic array, actual length is determined by FileNameLength
 }
 
 const (
@@ -32,27 +32,21 @@ const (
 	FILE_MODIFIED
 	FILE_RENAME_OLD
 	FILE_RENAME_NEW
+	FILE_EVENT_MAX
 )
 
-// 定义事件类型
-var actionMap = map[uint32]string{
-	1: "Added",
-	2: "Removed",
-	3: "Modified",
-	4: "RenamedOldName",
-	5: "RenamedNewName",
+type FileEvent struct {
+	sync.WaitGroup
+
+	shutdown bool
+	config   Config
+	sql      *SQLiteDB
+	handles  []windows.Handle
 }
 
-// func main() {
-// 	// 监听的目标目录
-// 	dir := `C:\`
-// 	listenDirectory(dir)
-// }
-
-func listenDirectory(dir string) {
-	// 打开目录
+func WindowCreateFile(driveName string) (windows.Handle, error) {
 	handle, err := windows.CreateFile(
-		windows.StringToUTF16Ptr(dir),
+		windows.StringToUTF16Ptr(driveName),
 		FILE_LIST_DIRECTORY,
 		FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE,
 		nil,
@@ -61,55 +55,122 @@ func listenDirectory(dir string) {
 		0,
 	)
 	if err != nil {
-		log.Fatalf("Failed to open directory: %v", err)
+		logs.Warning("call windows.CreateFile %s failed, %s", driveName, err.Error())
+		return 0, fmt.Errorf("notify event directory %s failed, %s", driveName, err.Error())
 	}
-	defer windows.CloseHandle(handle)
-
-	// 创建缓冲区
-	buffer := make([]byte, 1024*1024) // 1MB 缓冲区
-
-	for {
-		var bytesReturned uint32
-		err := windows.ReadDirectoryChanges(
-			handle,
-			&buffer[0],
-			uint32(len(buffer)),
-			true, // 是否递归监听子目录
-			windows.FILE_NOTIFY_CHANGE_FILE_NAME|
-				windows.FILE_NOTIFY_CHANGE_DIR_NAME|
-				windows.FILE_NOTIFY_CHANGE_ATTRIBUTES|
-				windows.FILE_NOTIFY_CHANGE_SIZE|
-				windows.FILE_NOTIFY_CHANGE_LAST_WRITE|
-				windows.FILE_NOTIFY_CHANGE_SECURITY,
-			&bytesReturned,
-			nil,
-			0,
-		)
-		if err != nil {
-			log.Fatalf("ReadDirectoryChanges failed: %v", err)
-		}
-
-		// 解析事件
-		parseEvents(buffer[:bytesReturned])
-	}
+	return handle, nil
 }
 
-func parseEvents(data []byte) {
+func ReadDirectoryChanges(handle windows.Handle, buffer []byte) (uint32, error) {
+	var bytesReturned uint32
+	err := windows.ReadDirectoryChanges(
+		handle,
+		&buffer[0],
+		uint32(len(buffer)),
+		true,
+		windows.FILE_NOTIFY_CHANGE_FILE_NAME|
+			windows.FILE_NOTIFY_CHANGE_DIR_NAME|
+			windows.FILE_NOTIFY_CHANGE_ATTRIBUTES|
+			windows.FILE_NOTIFY_CHANGE_SIZE|
+			windows.FILE_NOTIFY_CHANGE_LAST_WRITE|
+			windows.FILE_NOTIFY_CHANGE_SECURITY,
+		&bytesReturned,
+		nil,
+		0,
+	)
+	if err != nil {
+		logs.Warning("call windows.ReadDirectoryChanges failed, %s", err.Error())
+	}
+	return bytesReturned, err
+}
+
+func NewFileEvent(s *SQLiteDB, config Config) (*FileEvent, error) {
+	e := &FileEvent{handles: make([]windows.Handle, 0), sql: s, config: config}
+
+	for _, v := range config.SearchDrives {
+		if !v.Enable {
+			continue
+		}
+		handle, err := WindowCreateFile(v.Name)
+		if err != nil {
+			return nil, err
+		}
+		e.handles = append(e.handles, handle)
+	}
+
+	e.Add(len(e.handles))
+	for _, handle := range e.handles {
+		go e.listenDriveTask(handle, config.CacheLength)
+	}
+
+	return e, nil
+}
+
+func (e *FileEvent) Close() {
+	e.shutdown = true
+	for _, handle := range e.handles {
+		windows.CloseHandle(handle)
+	}
+	e.Wait()
+}
+
+func (e *FileEvent) parseEvents(data []byte) {
 	var offset uint32 = 0
 	for {
 		event := (*FILE_NOTIFY_INFORMATION)(unsafe.Pointer(&data[offset]))
 
-		// 提取文件名
-		fileName := syscall.UTF16ToString((*[1 << 20]uint16)(unsafe.Pointer(&event.FileName))[:event.FileNameLength/2])
+		filePath := syscall.UTF16ToString((*[1 << 20]uint16)(unsafe.Pointer(&event.FileName))[:event.FileNameLength/2])
 
-		// 获取事件类型
-		action := actionMap[event.Action]
-		fmt.Printf("Event: %s, File: %s\n", action, fileName)
-
-		// 检查是否还有更多事件
+		if event.Action < FILE_EVENT_MAX {
+			switch event.Action {
+			case FILE_ADD:
+				fallthrough
+			case FILE_MODIFIED:
+				fallthrough
+			case FILE_RENAME_NEW:
+				{
+					fileInfo, err := NewFileInfo(filePath)
+					if err != nil {
+						logs.Warning("load %s file info failed, %s", filePath, err.Error())
+					} else {
+						e.sql.Notify() <- FileNotify{Event: event.Action, File: *fileInfo}
+					}
+				}
+			case FILE_REMOVE:
+				fallthrough
+			case FILE_RENAME_OLD:
+				{
+					e.sql.Notify() <- FileNotify{Event: event.Action, File: FileInfo{
+						Path: filePath,
+					}}
+				}
+			}
+		}
+		// Check if there are more events
 		if event.NextEntryOffset == 0 {
 			break
 		}
 		offset += event.NextEntryOffset
 	}
+}
+
+func (e *FileEvent) listenDriveTask(handle windows.Handle, cacheLength uint32) {
+	defer e.Done()
+
+	logs.Info("listen drive file change task startup")
+
+	buffer := make([]byte, cacheLength)
+
+	for {
+		if e.shutdown {
+			break
+		}
+
+		bytesReturned, err := ReadDirectoryChanges(handle, buffer)
+		if err == nil {
+			e.parseEvents(buffer[:bytesReturned])
+		}
+	}
+
+	logs.Info("listen drive file change task done")
 }
