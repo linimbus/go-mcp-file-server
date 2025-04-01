@@ -1,11 +1,16 @@
 package main
 
-import "github.com/astaxie/beego/logs"
+import (
+	"github.com/astaxie/beego/logs"
+)
 
 type Server struct {
-	sql  *SQLiteDB
-	mcp  *MCPServer
-	file *FileEvent
+	shutdown bool
+
+	config Config
+	sql    *SQLiteDB
+	mcp    *MCPServer
+	file   *FileEvent
 }
 
 func NewServer(config Config) (*Server, error) {
@@ -29,11 +34,25 @@ func NewServer(config Config) (*Server, error) {
 
 	return &Server{
 		sql: sql, mcp: mcp, file: file,
+		config: config,
 	}, nil
 }
 
 func (s *Server) Shutdown() {
+	s.shutdown = true
 	s.file.Close()
 	s.mcp.Shutdown()
 	s.sql.Close()
+}
+
+func (s *Server) RebuidIndex() {
+	err := s.sql.Reset()
+	if err != nil {
+		logs.Error("sql index reset failed, %s", err.Error())
+		return
+	}
+	logs.Info("force scan start")
+	DriveFullScan(s.sql, s.config, &s.shutdown)
+	logs.Info("force scan end")
+	WorkingUpdate("")
 }

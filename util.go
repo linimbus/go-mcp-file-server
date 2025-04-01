@@ -17,7 +17,7 @@ import (
 	. "github.com/lxn/walk/declarative"
 )
 
-var APPLICATION_VERSION = "0.1.0"
+var APPLICATION_VERSION = "0.1.1"
 
 func SaveToFile(name string, body []byte) error {
 	return os.WriteFile(name, body, 0664)

@@ -8,26 +8,16 @@ import (
 	"github.com/astaxie/beego/logs"
 )
 
-var forceStatus bool // force status
-
-func init() {
-	go forceScanTask()
-}
-
-func ForceScanSet(status bool) {
-	forceStatus = status
-}
-
-func ForceScanGet() bool {
-	return forceStatus
-}
-
-func driveScan(s *SQLiteDB, cfg Config, drive string) error {
+func driveScan(s *SQLiteDB, cfg Config, drive string, shutdown *bool) error {
 	startup := time.Now()
 
 	err := filepath.Walk(drive, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil
+		}
+
+		if *shutdown == true {
+			return filepath.SkipAll
 		}
 
 		if info.IsDir() {
@@ -68,33 +58,17 @@ func driveScan(s *SQLiteDB, cfg Config, drive string) error {
 	return err
 }
 
-func driveFullScan(s *SQLiteDB, cfg Config) {
+func DriveFullScan(s *SQLiteDB, cfg Config, shutdown *bool) {
 	for _, drive := range cfg.SearchDrives {
-		if !drive.Enable {
+		if !drive.Enable && *shutdown == false {
 			continue
 		}
 		logs.Info("full drive scan %s start", drive.Name)
-		err := driveScan(s, cfg, drive.Name)
+		err := driveScan(s, cfg, drive.Name, shutdown)
 		if err != nil {
 			logs.Error("full drive scan %s error: %s", drive.Name, err.Error())
 		} else {
 			logs.Info("full drive scan %s end", drive.Name)
-		}
-	}
-}
-
-func forceScanTask() {
-	for {
-		time.Sleep(time.Second)
-
-		if forceStatus && srv != nil {
-			srv.sql.Reset()
-			logs.Info("force scan start")
-			driveFullScan(srv.sql, configCache)
-			logs.Info("force scan end")
-			WorkingUpdate("")
-			forceStatus = false
-			forceScan.SetEnabled(true)
 		}
 	}
 }

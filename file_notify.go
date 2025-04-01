@@ -41,7 +41,7 @@ type FileEvent struct {
 	shutdown bool
 	config   Config
 	sql      *SQLiteDB
-	handles  []windows.Handle
+	handles  map[string]windows.Handle
 }
 
 func WindowCreateFile(driveName string) (windows.Handle, error) {
@@ -85,7 +85,7 @@ func ReadDirectoryChanges(handle windows.Handle, buffer []byte) (uint32, error) 
 }
 
 func NewFileEvent(s *SQLiteDB, config Config) (*FileEvent, error) {
-	e := &FileEvent{handles: make([]windows.Handle, 0), sql: s, config: config}
+	e := &FileEvent{handles: make(map[string]windows.Handle, 0), sql: s, config: config}
 
 	for _, v := range config.SearchDrives {
 		if !v.Enable {
@@ -95,12 +95,12 @@ func NewFileEvent(s *SQLiteDB, config Config) (*FileEvent, error) {
 		if err != nil {
 			return nil, err
 		}
-		e.handles = append(e.handles, handle)
+		e.handles[v.Name] = handle
 	}
 
-	e.Add(len(e.handles))
-	for _, handle := range e.handles {
-		go e.listenDriveTask(handle, config.CacheLength)
+	for name, handle := range e.handles {
+		e.Add(1)
+		go e.listenDriveTask(name, handle, config.CacheLength)
 	}
 
 	return e, nil
@@ -108,20 +108,18 @@ func NewFileEvent(s *SQLiteDB, config Config) (*FileEvent, error) {
 
 func (e *FileEvent) Close() {
 	e.shutdown = true
-	for _, handle := range e.handles {
-		windows.CloseHandle(handle)
-	}
-	e.Wait()
+	// e.Wait()
+	logs.Info("file event ready close")
 }
 
-func (e *FileEvent) parseEvents(data []byte) {
+func (e *FileEvent) parseEvents(driveName string, data []byte) {
 	var offset uint32 = 0
 	for {
 		event := (*FILE_NOTIFY_INFORMATION)(unsafe.Pointer(&data[offset]))
 
-		filePath := syscall.UTF16ToString((*[1 << 20]uint16)(unsafe.Pointer(&event.FileName))[:event.FileNameLength/2])
+		filePath := driveName + syscall.UTF16ToString((*[1 << 20]uint16)(unsafe.Pointer(&event.FileName))[:event.FileNameLength/2])
 
-		if event.Action < FILE_EVENT_MAX {
+		if event.Action < FILE_EVENT_MAX && !e.config.CheckFolder(filePath) {
 			switch event.Action {
 			case FILE_ADD:
 				fallthrough
@@ -154,8 +152,9 @@ func (e *FileEvent) parseEvents(data []byte) {
 	}
 }
 
-func (e *FileEvent) listenDriveTask(handle windows.Handle, cacheLength uint32) {
+func (e *FileEvent) listenDriveTask(name string, handle windows.Handle, cacheLength uint32) {
 	defer e.Done()
+	defer windows.CloseHandle(handle)
 
 	logs.Info("listen drive file change task startup")
 
@@ -168,7 +167,7 @@ func (e *FileEvent) listenDriveTask(handle windows.Handle, cacheLength uint32) {
 
 		bytesReturned, err := ReadDirectoryChanges(handle, buffer)
 		if err == nil {
-			e.parseEvents(buffer[:bytesReturned])
+			e.parseEvents(name, buffer[:bytesReturned])
 		}
 	}
 

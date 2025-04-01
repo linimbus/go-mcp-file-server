@@ -81,7 +81,7 @@ CREATE TABLE IF NOT EXISTS file_info (
 );`
 
 var TABLE_INDEX_SQL = `
-CREATE INDEX idx_file_info_name ON file_info (name, ext);
+CREATE INDEX IF NOT EXISTS idx_file_info_name ON file_info (name, ext);
 `
 
 var TABLE_INSERT_SQL = `
@@ -132,7 +132,11 @@ func (s *SQLiteDB) Reset() error {
 	s.Lock()
 	defer s.Unlock()
 
-	_, err := s.db.Exec("DROP TABLE IF EXISTS file_info;")
+	_, err := s.db.Exec("DROP INDEX idx_file_info_name;")
+	if err != nil {
+		return fmt.Errorf("drop index failed, %s", err.Error())
+	}
+	_, err = s.db.Exec("DROP TABLE IF EXISTS file_info;")
 	if err != nil {
 		return fmt.Errorf("drop table failed, %s", err.Error())
 	}
@@ -140,9 +144,11 @@ func (s *SQLiteDB) Reset() error {
 	if err != nil {
 		return fmt.Errorf("create table failed, %s", err.Error())
 	}
-
+	_, err = s.db.Exec(TABLE_INDEX_SQL)
+	if err != nil {
+		return fmt.Errorf("create index failed, %s", err.Error())
+	}
 	logs.Info("sql reset database success")
-
 	return nil
 }
 

@@ -52,7 +52,7 @@ func (c *Config) CheckFolder(path string) bool {
 	if c.FilterHide || c.FilterSystem {
 		attr, err := GetPathAttributes(path)
 		if err != nil {
-			logs.Warning("get path attributes failed, %s", err.Error())
+			// logs.Warning("get path attributes failed, %s", err.Error()) // too much
 			return false
 		}
 

@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"sort"
 	"sync"
 	"time"
@@ -50,8 +51,13 @@ func MenuBarInit() []MenuItem {
 					Text:     "Rebuild Index",
 					Enabled:  true,
 					OnTriggered: func() {
-						ForceScanSet(true)
-						forceScan.SetEnabled(false)
+						go func() {
+							if srv != nil {
+								forceScan.SetEnabled(false)
+								srv.RebuidIndex()
+								forceScan.SetEnabled(true)
+							}
+						}()
 					},
 				},
 
@@ -226,6 +232,15 @@ func (m *QueryTable) QuerySearch(keyword string) error {
 	return nil
 }
 
+func (m *QueryTable) OpenFile(index int) {
+	m.RLock()
+	defer m.RUnlock()
+
+	if index < len(m.items) {
+		OpenBrowserWeb(m.items[index].Path)
+	}
+}
+
 var queryTableView *walk.TableView
 var queryTableData *QueryTable
 var searchText *walk.LineEdit
@@ -238,9 +253,6 @@ func init() {
 
 func MainWindows() {
 	defer func() {
-		if srv != nil {
-			srv.Shutdown()
-		}
 		if err := recover(); err != nil {
 			logs.Error("recover error %v", err)
 		}
@@ -275,17 +287,7 @@ func MainWindows() {
 							queryTableData.QuerySearch(searchText.Text())
 						},
 						OnTextChanged: func() {
-
-						},
-					},
-					PushButton{
-						Text:    "Search",
-						MinSize: Size{Width: 80, Height: 30},
-						OnClicked: func() {
-							err := queryTableData.QuerySearch(searchText.Text())
-							if err != nil {
-								ErrorBoxAction(mainWindow, err.Error())
-							}
+							queryTableData.QuerySearch(searchText.Text())
 						},
 					},
 				},
@@ -302,6 +304,10 @@ func MainWindows() {
 					{Title: "ModTime", Width: 160},
 				},
 				Model: queryTableData,
+				OnItemActivated: func() {
+					index := queryTableView.CurrentIndex()
+					queryTableData.OpenFile(index)
+				},
 			},
 		},
 	}.Run()
@@ -316,9 +322,14 @@ func MainWindows() {
 }
 
 func CloseWindows() {
+	if srv != nil {
+		srv.Shutdown()
+		srv = nil
+	}
 	if mainWindow != nil {
 		mainWindow.Close()
 		mainWindow = nil
 	}
 	NotifyExit()
+	os.Exit(0)
 }
