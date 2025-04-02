@@ -32,6 +32,8 @@ func NewServer(config Config) (*Server, error) {
 		logs.Error("file event startup failed, %s", err.Error())
 	}
 
+	logs.Info("server init success")
+
 	return &Server{
 		sql: sql, mcp: mcp, file: file,
 		config: config,
@@ -43,6 +45,7 @@ func (s *Server) Shutdown() {
 	s.file.Close()
 	s.mcp.Shutdown()
 	s.sql.Close()
+	logs.Info("server done")
 }
 
 func (s *Server) RebuidIndex() {

@@ -122,6 +122,7 @@ func NewSQLiteDB() (*SQLiteDB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create index failed, %s", err.Error())
 	}
+
 	s := &SQLiteDB{db: db, notify: make(chan interface{}, NOTIFY_CACHE_LENGTH)}
 	s.Add(1)
 	go recvNotifyTask(s)
@@ -169,6 +170,8 @@ func recvNotifyTask(s *SQLiteDB) {
 		s.Lock()
 
 		if fileNotify, ok := msg.(*FileNotify); ok {
+			logs.Info("recive file event: %d path: %s", fileNotify.Event, fileNotify.File.Path)
+
 			switch fileNotify.Event {
 			case FILE_ADD:
 				{

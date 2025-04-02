@@ -16,7 +16,8 @@ func driveScan(s *SQLiteDB, cfg Config, drive string, shutdown *bool) error {
 			return nil
 		}
 
-		if *shutdown == true {
+		if *shutdown {
+			logs.Info("full drive scan cancel")
 			return filepath.SkipAll
 		}
 
@@ -48,7 +49,7 @@ func driveScan(s *SQLiteDB, cfg Config, drive string, shutdown *bool) error {
 
 		temp := time.Now()
 
-		if temp.Sub(startup).Milliseconds() > 500 {
+		if temp.Sub(startup).Milliseconds() > 200 {
 			WorkingUpdate(path)
 			startup = temp
 		}
@@ -60,9 +61,10 @@ func driveScan(s *SQLiteDB, cfg Config, drive string, shutdown *bool) error {
 
 func DriveFullScan(s *SQLiteDB, cfg Config, shutdown *bool) {
 	for _, drive := range cfg.SearchDrives {
-		if !drive.Enable && *shutdown == false {
+		if !drive.Enable && !*shutdown {
 			continue
 		}
+
 		logs.Info("full drive scan %s start", drive.Name)
 		err := driveScan(s, cfg, drive.Name, shutdown)
 		if err != nil {

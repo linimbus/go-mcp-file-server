@@ -131,14 +131,14 @@ func (e *FileEvent) parseEvents(driveName string, data []byte) {
 					if err != nil {
 						logs.Warning("load %s file info failed, %s", filePath, err.Error())
 					} else {
-						e.sql.Notify() <- FileNotify{Event: event.Action, File: *fileInfo}
+						e.sql.Notify() <- &FileNotify{Event: event.Action, File: *fileInfo}
 					}
 				}
 			case FILE_REMOVE:
 				fallthrough
 			case FILE_RENAME_OLD:
 				{
-					e.sql.Notify() <- FileNotify{Event: event.Action, File: FileInfo{
+					e.sql.Notify() <- &FileNotify{Event: event.Action, File: FileInfo{
 						Path: filePath,
 					}}
 				}

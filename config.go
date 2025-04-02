@@ -22,7 +22,7 @@ type Config struct {
 	McpEnable bool   `json:"map_enable"` // mcp server enable
 
 	SearchDrives []DriveConfig `json:"search_drives"`        // drive name list
-	FilterRegx   []string      `json:"filter_regx"`          // filter regx list
+	FilterRegexp []string      `json:"filter_regexp"`        // filter regex list
 	FilterFolder []string      `json:"filter_folder"`        // filter folder list
 	FilterHide   bool          `json:"filter_hide_folder"`   // filter hide
 	FilterSystem bool          `json:"filter_system_folder"` // filter system folder
@@ -35,11 +35,15 @@ type Config struct {
 }
 
 func (c *Config) CheckFolder(path string) bool {
-	if len(path) < 4 { // ignore path like "C:\"
+	if len(path) < 4 { // ignore the root path like "C:\"
 		return false
 	}
 
 	if strings.Contains(path, "$Recycle.Bin") {
+		return true
+	}
+
+	if strings.Contains(path, DEFAULT_HOME) {
 		return true
 	}
 
@@ -79,7 +83,7 @@ var configCache = Config{
 	McpEnable:    true,
 	SearchDrives: []DriveConfig{},
 	FilterFolder: []string{"C:\\Windows", "C:\\Program Files", "C:\\Program Files (x86)", "C:\\ProgramData"},
-	FilterRegx:   []string{},
+	FilterRegexp: []string{},
 	FilterHide:   true,
 	FilterSystem: true,
 	AutoHide:     false,
@@ -148,11 +152,6 @@ func AutoStartupSave(value bool) error {
 		}
 	}
 	configCache.AutoStartup = value
-	return configSyncToFile()
-}
-
-func AUtoHideSave(value bool) error {
-	configCache.AutoHide = value
 	return configSyncToFile()
 }
 

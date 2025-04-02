@@ -27,7 +27,7 @@ func init() {
 	}()
 }
 
-var autoStartupCheck, autoHideWindows, forceScan *walk.Action
+var autoStartupCheck, forceScan *walk.Action
 
 func MenuBarInit() []MenuItem {
 	return []MenuItem{
@@ -88,23 +88,9 @@ func MenuBarInit() []MenuItem {
 			Text: "View",
 			Items: []MenuItem{
 				Action{
-					Text: "Windows Hide",
+					Text: "Mini Windows",
 					OnTriggered: func() {
 						NotifyAction()
-					},
-				},
-				Action{
-					Text:     "Auto Hide",
-					AssignTo: &autoHideWindows,
-					Checked:  ConfigGet().AutoHide,
-					OnTriggered: func() {
-						flag := !autoHideWindows.Checked()
-						err := AUtoHideSave(flag)
-						if err != nil {
-							ErrorBoxAction(mainWindow, err.Error())
-						} else {
-							autoHideWindows.SetChecked(flag)
-						}
 					},
 				},
 			},
@@ -112,6 +98,12 @@ func MenuBarInit() []MenuItem {
 		Menu{
 			Text: "Help",
 			Items: []MenuItem{
+				Action{
+					Text: "Regexp",
+					OnTriggered: func() {
+						OpenBrowserWeb("https://en.wikipedia.org/wiki/Regular_expression#Examples")
+					},
+				},
 				Action{
 					Text: "Runlog",
 					OnTriggered: func() {

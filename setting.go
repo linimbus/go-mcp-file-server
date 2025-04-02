@@ -222,7 +222,7 @@ func SearchSettingDialog(from walk.Form) {
 					},
 
 					Label{
-						Text: "Filter Folder List",
+						Text: "Ignore Folder List",
 					},
 					HSpacer{},
 
