@@ -1,4 +1,4 @@
-# Go-MCP-FileSystem-Server
+# Go-MCP-File-Server
 
 [![Download Go Mcp FIle Server](https://a.fsdn.com/con/app/sf-download-button)](https://sourceforge.net/projects/go-mcp-file-system-server/files/latest/download)
 
@@ -17,4 +17,4 @@
 
 ## demo video:
 
-<iframe width="560" height="315" src="https://www.youtube.com/watch?v=oMo8kId1DGo" frameborder="0" allowfullscreen></iframe>
+![video](https://www.youtube.com/watch?v=oMo8kId1DGo)
