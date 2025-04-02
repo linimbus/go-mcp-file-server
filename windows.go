@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"sort"
 	"sync"
 	"time"
@@ -13,6 +14,41 @@ import (
 
 var mainWindow *walk.MainWindow
 var mainServer *Server
+
+var WILDCARDS_HELP = `
+The GLOB operator in SQLite uses wildcards for pattern matching.
+Here are all the special symbols it supports and their functions:
+
+Basic wildcards: 
+
+* (asterisk)
+	Matches zero or more of any character
+	Example: '*.txt' matches all strings ending with .txt
+
+? (question mark)
+	Matches any single character
+	Example: 'file?.txt' matches file1.txt, fileA.txt, etc.
+
+Character set matching: 
+
+[...] (character set)
+	Matches any single character in the square brackets
+	Example: '[abc]*' matches a string starting with a, b, or c
+
+[^...] or [!...] (negated character set)
+	Matches any single character not in the square brackets
+	Example: '[^0-9]*' matches a string that does not start with a number
+
+[a-z] (character range)
+	Matches any single character in the specified range
+	Example: '[A-Za-z]*' Matches a string that starts with a letter
+
+Special considerations: 
+
+Case sensitivity: GLOB is case sensitive by default.
+'A*' matches "Apple" but not "apple"
+
+`
 
 func init() {
 	go func() {
@@ -97,9 +133,9 @@ func MenuBarInit() []MenuItem {
 			Text: "Help",
 			Items: []MenuItem{
 				Action{
-					Text: "Regexp",
+					Text: "Wildcards",
 					OnTriggered: func() {
-						OpenBrowserWeb("https://en.wikipedia.org/wiki/Regular_expression#Examples")
+						InfoAction(mainWindow, WILDCARDS_HELP)
 					},
 				},
 				Action{
@@ -329,4 +365,5 @@ func CloseWindows() {
 		mainWindow = nil
 	}
 	NotifyExit()
+	os.Exit(0)
 }

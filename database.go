@@ -96,9 +96,14 @@ WHERE path = ?`
 var TABLE_DELETE_SQL = `
 DELETE FROM file_info WHERE path = ?`
 
-var TABLE_QUERY_SQL = `
+var TABLE_QUERY_LIKE_SQL = `
 SELECT name, is_dir, path, ext, drive, mod_time, size FROM file_info
 WHERE name LIKE ?
+LIMIT ?`
+
+var TABLE_QUERY_GLOB_SQL = `
+SELECT name, is_dir, path, ext, drive, mod_time, size FROM file_info
+WHERE name GLOB ?
 LIMIT ?`
 
 type SQLiteDB struct {
@@ -269,17 +274,37 @@ func (s *SQLiteDB) Write(file FileInfo) {
 	}
 }
 
+func (s *SQLiteDB) Count() (int, error) {
+	var rowCount int
+	err := s.db.QueryRow("SELECT COUNT(*) AS row_count FROM file_info").Scan(&rowCount)
+	if err != nil {
+		logs.Error("query row count failed, %s", err.Error())
+		return -1, err
+	}
+	return rowCount, nil
+}
+
 func (s *SQLiteDB) Query(keyword string, limit int) ([]FileInfo, error) {
 	s.RLock()
 	defer s.RUnlock()
 
-	output := make([]FileInfo, 0)
-	rows, err := s.db.Query(TABLE_QUERY_SQL, "%"+keyword+"%", limit)
+	var rows *sql.Rows
+	var err error
+
+	if IsGlobChar(keyword) {
+		rows, err = s.db.Query(TABLE_QUERY_GLOB_SQL, keyword, limit)
+	} else {
+		rows, err = s.db.Query(TABLE_QUERY_LIKE_SQL, "%"+keyword+"%", limit)
+	}
+
 	if err != nil {
 		logs.Warning("query sql failed, %s", err.Error())
 		return nil, err
 	}
+
 	defer rows.Close()
+
+	output := make([]FileInfo, 0)
 
 	for rows.Next() {
 		var name, path, ext, drive, modTimeStr string
@@ -302,4 +327,13 @@ func (s *SQLiteDB) Query(keyword string, limit int) ([]FileInfo, error) {
 	}
 
 	return output, nil
+}
+
+func IsGlobChar(keyword string) bool {
+	for _, v := range keyword {
+		if v == '*' || v == '?' || v == '[' || v == ']' {
+			return true
+		}
+	}
+	return false
 }

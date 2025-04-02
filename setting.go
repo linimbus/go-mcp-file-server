@@ -283,7 +283,6 @@ func SearchSettingDialog(from walk.Form) {
 								ErrorBoxAction(dlg, "Save config failed, "+err.Error())
 								return
 							}
-							ServerRestart(config)
 							dlg.Accept()
 							logs.Info("SearchSettingDialog accept")
 						},

@@ -6,7 +6,7 @@ import (
 )
 
 var statusBar, workingBar *walk.StatusBarItem
-var statusText string
+var statusText, workingText string
 
 func statusIcon(status string) *walk.Icon {
 	if status != "" {
@@ -27,6 +27,7 @@ func WorkingUpdate(status string) {
 	if workingBar != nil {
 		workingBar.SetText(status)
 	}
+	workingText = status
 }
 
 func StatusBarInit() []StatusBarItem {
@@ -34,13 +35,16 @@ func StatusBarInit() []StatusBarItem {
 		{
 			AssignTo: &statusBar,
 			Icon:     statusIcon(statusText),
-			Width:    200,
+			Width:    20,
 			Text:     statusText,
+			OnClicked: func() {
+				OpenBrowserWeb(RunlogDirGet())
+			},
 		},
 		{
 			AssignTo: &workingBar,
-			Width:    400,
-			Text:     "",
+			Width:    600,
+			Text:     workingText,
 		},
 	}
 }
