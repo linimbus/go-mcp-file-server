@@ -54,7 +54,10 @@ func NewMCPServer(s *SQLiteDB) *MCPServer {
 
 	queryTool := mcp.NewTool(
 		"file_query",
-		mcp.WithDescription("Execute a file search operation. Make sure you have a filename or keyword before executing the query."),
+		mcp.WithDescription("Execute a file search operation. "+
+			" Make sure you have a filename or keyword before executing the query. "+
+			" Make sure you have knowledge of SQLite3 query rules, "+
+			" please use the `LIKE` or `GLOB` query rules."),
 		mcp.WithString("filename",
 			mcp.Required(),
 			mcp.Description("The filename as a keyword to query"),
@@ -67,7 +70,8 @@ func NewMCPServer(s *SQLiteDB) *MCPServer {
 
 	openTool := mcp.NewTool(
 		"file_open",
-		mcp.WithDescription("Execute a file open operation. Make sure you have a filename or keyword before executing the open."),
+		mcp.WithDescription("Execute a file open operation."+
+			" Make sure you have a filename or keyword before executing the open."),
 		mcp.WithString("filename",
 			mcp.Required(),
 			mcp.Description("The filename as a keyword to open"),
