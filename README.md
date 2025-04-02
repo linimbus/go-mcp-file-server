@@ -15,6 +15,7 @@
 ```
 
 
-## demo video:
+## Video
 
-![video](https://www.youtube.com/watch?v=oMo8kId1DGo)
+[Operation Demo Video](https://www.youtube.com/watch?v=oMo8kId1DGo)
+
