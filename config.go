@@ -69,8 +69,8 @@ func (c *Config) CheckFolder(path string) bool {
 		}
 	}
 
-	if c.FilterHide && filepath.Base(path)[0] == '.' {
-		logs.Info("skip hidden folder %s", path)
+	if c.FilterHide && strings.Contains(path, "\\.") {
+		// logs.Info("skip hidden folder %s", path) // too much
 		return true
 	}
 

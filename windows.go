@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"sort"
 	"sync"
 	"time"
@@ -13,7 +12,7 @@ import (
 )
 
 var mainWindow *walk.MainWindow
-var srv *Server
+var mainServer *Server
 
 func init() {
 	go func() {
@@ -35,32 +34,31 @@ func MenuBarInit() []MenuItem {
 			Text: "Setting",
 			Items: []MenuItem{
 				Action{
-					Text: "Search Setting",
+					Text: "Index Setting",
 					OnTriggered: func() {
 						SearchSettingDialog(mainWindow)
 					},
 				},
 				Action{
-					Text: "MCP Server",
-					OnTriggered: func() {
-						McpServerConfigDialog(mainWindow)
-					},
-				},
-				Action{
 					AssignTo: &forceScan,
-					Text:     "Rebuild Index",
+					Text:     "Index Rebuild",
 					Enabled:  true,
 					OnTriggered: func() {
 						go func() {
-							if srv != nil {
+							if mainServer != nil {
 								forceScan.SetEnabled(false)
-								srv.RebuidIndex()
+								mainServer.RebuidIndex()
 								forceScan.SetEnabled(true)
 							}
 						}()
 					},
 				},
-
+				Action{
+					Text: "MCP Server Setting",
+					OnTriggered: func() {
+						McpServerConfigDialog(mainWindow)
+					},
+				},
 				Action{
 					Text:     "Auto Startup",
 					AssignTo: &autoStartupCheck,
@@ -199,11 +197,11 @@ func (m *QueryTable) QuerySearch(keyword string) error {
 	m.Lock()
 	defer m.Unlock()
 
-	if srv == nil {
+	if mainServer == nil {
 		return fmt.Errorf("sqlite db init failed")
 	}
 
-	fileInfos, err := srv.sql.Query(keyword, 1024)
+	fileInfos, err := mainServer.sql.Query(keyword, 1024)
 	if err != nil {
 		return err
 	}
@@ -243,6 +241,19 @@ func init() {
 	}
 }
 
+func ServerRestart(config Config) {
+	var err error
+
+	if mainServer != nil {
+		mainServer.Shutdown()
+	}
+
+	mainServer, err = NewServer(config)
+	if err != nil {
+		StatusUpdate(err.Error())
+	}
+}
+
 func MainWindows() {
 	defer func() {
 		if err := recover(); err != nil {
@@ -250,12 +261,7 @@ func MainWindows() {
 		}
 	}()
 
-	var err error
-
-	srv, err = NewServer(ConfigGet())
-	if err != nil {
-		StatusUpdate(err.Error())
-	}
+	ServerRestart(ConfigGet())
 
 	CapSignal(CloseWindows)
 
@@ -314,14 +320,13 @@ func MainWindows() {
 }
 
 func CloseWindows() {
-	if srv != nil {
-		srv.Shutdown()
-		srv = nil
+	if mainServer != nil {
+		mainServer.Shutdown()
+		mainServer = nil
 	}
 	if mainWindow != nil {
 		mainWindow.Close()
 		mainWindow = nil
 	}
 	NotifyExit()
-	os.Exit(0)
 }

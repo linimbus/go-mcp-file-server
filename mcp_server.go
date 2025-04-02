@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/csv"
 	"fmt"
+	"net"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -16,9 +18,10 @@ import (
 type MCPServer struct {
 	sync.WaitGroup
 
-	server *server.MCPServer
-	sse    *server.SSEServer
-	sql    *SQLiteDB
+	server     *server.MCPServer
+	sse        *server.SSEServer
+	httpserver *http.Server
+	sql        *SQLiteDB
 }
 
 func ResultToCSV(files []FileInfo) (string, error) {
@@ -72,12 +75,17 @@ func NewMCPServer(s *SQLiteDB) *MCPServer {
 	)
 
 	mcpServer.AddTool(queryTool, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		defer func() {
+			if err := recover(); err != nil {
+				logs.Error("serve http panic: %v", err)
+			}
+		}()
 
 		logs.Info("mcp server start query tools")
 
-		limit, ok := request.Params.Arguments["limit"].(int)
-		if !ok || limit <= 0 {
-			limit = 100
+		limit, ok := request.Params.Arguments["limit"].(float64)
+		if !ok || limit <= 0.0 {
+			limit = 100.0
 		}
 
 		filename, ok := request.Params.Arguments["filename"].(string)
@@ -85,9 +93,9 @@ func NewMCPServer(s *SQLiteDB) *MCPServer {
 			return nil, fmt.Errorf("filename is empty")
 		}
 
-		logs.Info("mcp server start query filename: %s, limit: %d", filename, limit)
+		logs.Info("mcp server start query filename: %s, limit: %d", filename, int(limit))
 
-		fileInfos, err := s.Query(filename, limit)
+		fileInfos, err := s.Query(filename, int(limit))
 		if err != nil {
 			logs.Error("mcp server query failed, %s", err.Error())
 
@@ -110,6 +118,12 @@ func NewMCPServer(s *SQLiteDB) *MCPServer {
 	})
 
 	mcpServer.AddTool(openTool, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		defer func() {
+			if err := recover(); err != nil {
+				logs.Error("serve http panic: %v", err)
+			}
+		}()
+
 		err := OpenBrowserWeb(request.Params.Arguments["filename"].(string))
 		if err != nil {
 			return nil, err
@@ -123,6 +137,10 @@ func NewMCPServer(s *SQLiteDB) *MCPServer {
 	}
 }
 
+func (s *MCPServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	s.sse.ServeHTTP(w, r)
+}
+
 func (s *MCPServer) Startup(addr string, port int) error {
 	var address string
 	if strings.Contains(addr, ":") {
@@ -131,17 +149,29 @@ func (s *MCPServer) Startup(addr string, port int) error {
 		address = fmt.Sprintf("%s:%d", addr, port)
 	}
 
-	s.sse = server.NewSSEServer(s.server)
+	listen, err := net.Listen("tcp", address)
+	if err != nil {
+		logs.Error("http file server listen %s address fail", address)
+		return err
+	}
+
+	s.httpserver = &http.Server{
+		Addr:    address,
+		Handler: s,
+	}
+
+	s.sse = server.NewSSEServer(s.server, server.WithHTTPServer(s.httpserver))
+
+	logs.Info("http file server listening on %s", address)
+
+	s.Add(1)
 
 	go func() {
 		defer s.Done()
-
-		err := s.sse.Start(address)
+		err = s.httpserver.Serve(listen)
 		if err != nil {
-			logs.Error("mcp server attach listen fail, %s", err.Error())
+			logs.Warning("httpserver serv failed, %s", err.Error())
 		}
-
-		logs.Info("mcp server shutdown")
 	}()
 
 	return nil
@@ -149,11 +179,11 @@ func (s *MCPServer) Startup(addr string, port int) error {
 
 func (s *MCPServer) Shutdown() {
 	logs.Info("mcp server ready to shutdown")
-	context, cencel := context.WithTimeout(context.Background(), 3*time.Second)
+	context, cencel := context.WithTimeout(context.Background(), 5*time.Second)
 	err := s.sse.Shutdown(context)
 	cencel()
 	if err != nil {
-		logs.Error("mcp server shutdown failed, %s", err.Error())
+		logs.Warning("mcp server shutdown failed, %s", err.Error())
 	}
 	s.Wait()
 }

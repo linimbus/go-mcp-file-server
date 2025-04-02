@@ -279,13 +279,13 @@ func SearchSettingDialog(from walk.Form) {
 								return
 							}
 							config.FilterFolder = filterListTable.ItemsAll()
-
 							if err := ConfigSet(config); err != nil {
 								ErrorBoxAction(dlg, "Save config failed, "+err.Error())
-							} else {
-								dlg.Accept()
-								logs.Info("SearchSettingDialog accept")
+								return
 							}
+							ServerRestart(config)
+							dlg.Accept()
+							logs.Info("SearchSettingDialog accept")
 						},
 					},
 					PushButton{
@@ -388,10 +388,11 @@ func McpServerConfigDialog(from walk.Form) {
 						OnClicked: func() {
 							if err := ConfigSet(config); err != nil {
 								ErrorBoxAction(dlg, "Save config failed, "+err.Error())
-							} else {
-								dlg.Accept()
-								logs.Info("McpServerConfigDialog accept")
+								return
 							}
+							ServerRestart(config)
+							dlg.Accept()
+							logs.Info("McpServerConfigDialog accept")
 						},
 					},
 					PushButton{
