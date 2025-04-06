@@ -96,7 +96,7 @@
 
 ### 1. **程序主界面**：
 
-![](.\doc\main.png)
+![](./doc/main.png)
 
 - 主界面顶部有以下菜单选项：
 
@@ -116,7 +116,7 @@
 
 ### 2. **设置菜单界面**：
 
-![](.\doc\setting.png)
+![](./doc/setting.png)
 
 其界面包括如下：
 
@@ -128,7 +128,7 @@
 
 ### 3. **文件搜索设置界面**：
 
-![](.\doc\search_setting.png)
+![](./doc/search_setting.png)
 
 用于设置文件搜索功相关参数：
 
@@ -150,7 +150,7 @@
 
 ### 4. **MCP Server设置界面**：
 
-![](.\doc\mcp_setting.png)
+![](./doc/mcp_setting.png)
 
 用于配置MCP服务器相关参数：
 
@@ -166,7 +166,7 @@
 
 ### 4. **帮助界面**：
 
-![](.\doc\help.png)
+![](./doc/help.png)
 
 主要介绍SQLite中GLOB操作符用于模式匹配的通配符相关知识：
 
